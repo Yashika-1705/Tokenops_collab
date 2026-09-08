@@ -118,6 +118,30 @@ function turns them into `Micros`. Rates are provider-supplied config, never
 hardcoded. The governor never sees provider specifics, which is what keeps this
 provider-agnostic.
 
+### The three voice pipelines, concretely
+
+Voice is the first real target, and it is three distinct pipelines. They bill in
+three different units, yet the accrual model above covers all three unchanged.
+Approximate 2026 prices are given as anchors, not as configuration.
+
+| Pipeline | Flows | Billed by | Runaway risk | Anchor price |
+|---|---|---|---|---|
+| Speech-to-speech | audio in and out | audio tokens, both directions (output ~2x input) | a conversation that never ends | Realtime API, ~$64 / 1M audio output tokens |
+| Speech-to-text | audio in, text out | minutes of audio in (or audio-in tokens) | an hour-long audio file | Whisper, ~$0.017 / minute |
+| Text-to-speech | text in, audio out | characters, or text-in + audio-out tokens | unbounded text to speak | OpenAI TTS, ~$15 / 1M characters |
+
+The point of the abstraction: three billing units (tokens, minutes, characters)
+and two directions collapse into one `price(modality, direction, quantity,
+cached)` call and one accrual loop. Speech-to-speech is the hardest case because
+it is bidirectional and continuous, so it is the natural first implementation
+target; the accrual clock meters input and output as separate directions on the
+same window.
+
+Each pipeline has a distinct denial-of-wallet shape, which is why the detectors
+below cover duration, spend, and rate rather than any single one: a
+speech-to-speech session runs away on *duration*, a transcription job on input
+*size*, and a synthesis job on output *volume*.
+
 ### Detectors (new, stream-scoped)
 
 Three, matching the real failure modes, smallest first:
