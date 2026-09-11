@@ -45,6 +45,7 @@ from tokenops.control.policies import (
     pre_call_worst_case,
     progress_guard,
     step_cap,
+    time_budget,
     tool_fix,
     tool_output_cap,
 )
@@ -77,6 +78,7 @@ _TEMPLATES = {
         c.budget(p["budget"]), c.price, default_max_output=p.get("default_max_output", 1024)
     ),
     "step_cap": lambda p, c: step_cap.build(p["max_steps"]),
+    "time_budget": lambda p, c: time_budget.build(p["max_seconds"]),
     "concurrency_cap": lambda p, c: concurrency_cap.build(
         p["max_concurrent"],
         dimension=p.get("dimension", "run"),
