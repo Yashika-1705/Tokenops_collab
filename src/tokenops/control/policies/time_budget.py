@@ -30,12 +30,11 @@ class TimeBudgetDetector(Detector):
 
     def __init__(self, max_seconds: float) -> None:
         self.max_seconds = max_seconds
+        self._started: dict[str, float] = {}
 
     def observe(self, attr: Attribution, step: BoundaryStep, view: LedgerView) -> Signal | None:
-        window = view.window(attr.run_id)
-        if not window:
-            return None
-        elapsed = step.ts - window[0].ts
+        start = self._started.setdefault(attr.run_id, step.ts)
+        elapsed = step.ts - start
         if elapsed >= self.max_seconds:
             return Signal(
                 detector=self.name,

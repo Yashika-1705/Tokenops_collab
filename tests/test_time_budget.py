@@ -9,40 +9,38 @@ from tokenops.control import ActionKind, Budget, Governor, Halt, Ledger, Observa
 from tokenops.control.policies import time_budget
 
 
-def _view_with_window(steps):
-    v = FakeView()
-    v._window = steps
-    return v
-
-
 def test_detector_trips_at_ceiling():
-    # make_step sets ts=float(step); use step numbers to control timestamps.
-    # window[0].ts = float(0) = 0.0; current step ts = float(61) = 61.0 → elapsed 61s >= 60s
+    # First observe sets start=0.0; second observe with ts=61.0 → elapsed 61s >= 60s
     det, _ = time_budget.build(max_seconds=60.0)
-    window = [make_step(step=0)]
-    view = _view_with_window(window)
-    sig = det.observe(make_attr(), make_step(step=61), view)
+    attr = make_attr()
+    view = FakeView()
+    det.observe(attr, make_step(step=0), view)  # sets start time
+    sig = det.observe(attr, make_step(step=61), view)
     assert sig is not None
     assert sig.severity.value == "trip"
 
 
 def test_detector_allows_below_ceiling():
-    # window[0].ts = 0.0; current step ts = 59.0 → elapsed 59s < 60s
+    # First observe sets start=0.0; second observe with ts=59.0 → elapsed 59s < 60s
     det, _ = time_budget.build(max_seconds=60.0)
-    window = [make_step(step=0)]
-    view = _view_with_window(window)
-    assert det.observe(make_attr(), make_step(step=59), view) is None
+    attr = make_attr()
+    view = FakeView()
+    det.observe(attr, make_step(step=0), view)  # sets start time
+    assert det.observe(attr, make_step(step=59), view) is None
 
 
-def test_detector_empty_window_allows():
+def test_detector_first_step_allows():
+    # First step for a run: elapsed is 0.0, always below any positive ceiling
     det, _ = time_budget.build(max_seconds=60.0)
-    assert det.observe(make_attr(), make_step(step=1), _view_with_window([])) is None
+    assert det.observe(make_attr(), make_step(step=1), FakeView()) is None
 
 
 def test_policy_halts():
     det, pol = time_budget.build(max_seconds=60.0)
-    window = [make_step(step=0)]
-    sig = det.observe(make_attr(), make_step(step=61), _view_with_window(window))
+    attr = make_attr()
+    view = FakeView()
+    det.observe(attr, make_step(step=0), view)  # sets start time
+    sig = det.observe(attr, make_step(step=61), view)
     assert pol.decide(sig, FakeView()).kind is ActionKind.HALT
 
 

@@ -15,8 +15,8 @@ not depend on pricing -- useful when a workflow's cost is latency rather than to
 
     elapsed(run) >= max_seconds
 
-`elapsed` is `step.ts - window[0].ts` (the current step's timestamp minus the first
-recorded step's timestamp). If the window is empty the detector returns None.
+`elapsed` is `step.ts - start` where `start` is the timestamp of the first step
+observed for that run (stored on the detector, O(1) per step).
 
 ## Action it takes to govern -- HALT
 
@@ -32,7 +32,7 @@ runtime you actually know and want to bound.
 
 ## Edge cases
 
-* Returns None on the first step (empty window) -- no elapsed time to measure yet.
+* First step: elapsed is `0.0` (the ledger records the step before `observe` runs, so `step.ts - start == 0.0`).
 * Trips at **exactly** `max_seconds` elapsed (>=).
 * Counts wall-clock time across all node types -- llm, tool, and delegate alike.
 
@@ -42,8 +42,7 @@ runtime you actually know and want to bound.
 |---|---|
 | `elapsed >= max_seconds` | `Signal(TRIP)` -> `Action(HALT)` |
 | `elapsed < max_seconds` | `None` (ALLOW) |
-| empty window | `None` (ALLOW) |
-| e2e: two tool crossings, `max_seconds=0.0` | halts on the second |
+| e2e: two tool crossings, `max_seconds=0.5` | halts on the second |
 
 ## Status
 
