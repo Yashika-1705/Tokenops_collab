@@ -205,6 +205,7 @@ def test_it_step_cap_halts_at_max_steps():
         len(calls) == 2
     )  # second call dispatches then observe HALTs; or halt on observe of step 2
 
+
 def test_time_budget_halts_run():
     controls = ApplyControls()
     gov = Governor(Ledger(budgets=[], price=toy_price), controls)
