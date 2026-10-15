@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import chronicle.session as chronicle_session
 import pytest
 from chronicle import boundary
 
@@ -29,7 +28,7 @@ def _hooks():
 
 def test_llm_boundary_pre_call_halt(store):
     clear()
-    reg = store.register_run(RunRegistration(run_id="r-halt"))
+    reg = store.register_run(RunRegistration(trace_id="r-halt"))
     config = {
         "governance": {
             "budgets": [{"id": "run_llm_cap", "limit_micros": 1, "dimension": "run"}],
@@ -51,19 +50,17 @@ def test_llm_boundary_pre_call_halt(store):
         called["n"] += 1
         return ModelResponse(content="x", input_tokens=1, output_tokens=1)
 
-    chronicle_session.reset_session().begin_trace("r-halt")
     with run_scope(reg, SpanContext(span_id="s1", service="agent")):
         with _governance_scope(gov, attr, provider="openai", model="gpt-4o-mini"):
             with pytest.raises(Halt):
                 chat("gpt-4o-mini", [{"role": "user", "content": "hi"}])
 
     assert called["n"] == 0
-    chronicle_session.reset_session()
 
 
 def test_llm_boundary_mutate_max_output(store):
     clear()
-    reg = store.register_run(RunRegistration(run_id="r-mut"))
+    reg = store.register_run(RunRegistration(trace_id="r-mut"))
     config = {
         "governance": {
             "budgets": [{"id": "run_llm_cap", "limit_micros": 10_000_000, "dimension": "run"}],
@@ -84,11 +81,9 @@ def test_llm_boundary_mutate_max_output(store):
         seen["max_output_tokens"] = max_output_tokens
         return ModelResponse(content="ok", input_tokens=2, output_tokens=1)
 
-    chronicle_session.reset_session().begin_trace("r-mut")
     with run_scope(reg, SpanContext(span_id="s1", service="agent")):
         with _governance_scope(gov, attr, provider="openai", model="gpt-4o-mini"):
             out = chat("gpt-4o-mini", [{"role": "user", "content": "hi"}])
 
     assert out.content == "ok"
     assert seen["max_output_tokens"] == 256
-    chronicle_session.reset_session()

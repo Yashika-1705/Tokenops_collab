@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import chronicle.session as chronicle_session
 import pytest
+from chronicle import default_hooks
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -17,12 +17,11 @@ from tokenops import (
     tokenops_run,
 )
 from tokenops.control.context import (
-    RUN_ID_HEADER,
     clear,
     current_governance,
     current_registration,
 )
-from tokenops.control.crossing import install_crossing_hook, on_crossing
+from tokenops.control.crossing import TokenOpsHook, install_crossing_hook
 from tokenops.control.governance_cache import clear_governance_config_cache
 from tokenops.control.models import GovernanceMode
 from tokenops.control.store import Store
@@ -44,9 +43,7 @@ def store(tmp_path):
 
 def test_init_installs_crossing_hook():
     init()
-    assert getattr(chronicle_session.reset_session, "_tokenops_crossing_hook", False)
-    session = chronicle_session.reset_session()
-    assert session.on_crossing is on_crossing
+    assert any(isinstance(h, TokenOpsHook) for h in default_hooks)
 
 
 def test_from_env_installs_crossing_hook(live_plane_url):
@@ -54,7 +51,6 @@ def test_from_env_installs_crossing_hook(live_plane_url):
     client = ControlPlaneClient.from_env()
     assert not client.embedded
     assert client.url == live_plane_url
-    assert getattr(chronicle_session.reset_session, "_tokenops_crossing_hook", False)
     install_crossing_hook()  # idempotent
 
 
@@ -67,7 +63,7 @@ def test_from_env_raises_without_a_url(monkeypatch):
         ControlPlaneClient.from_env()
 
 
-def test_tokenops_run_registers_when_no_run_id(store):
+def test_tokenops_run_registers_when_no_trace_id(store):
     clear()
     with tokenops_run(
         store=store,
@@ -85,7 +81,7 @@ def test_tokenops_run_registers_when_no_run_id(store):
         assert bound.client is not None
         assert current_registration() is bound.registration
         assert current_governance() is not None
-        assert current_governance().attr.run_id == bound.registration.run_id
+        assert current_governance().attr.trace_id == bound.registration.trace_id
         assert bound.governor.controls is bound.controls
     assert current_registration() is None
     assert current_governance() is None
@@ -110,23 +106,24 @@ def test_tokenops_run_without_user_passed_store(live_plane_url):
     clear()
 
 
-def test_tokenops_run_joins_when_run_id_present(store):
+def test_tokenops_run_joins_the_inbound_trace(store):
     clear()
     client = ControlPlaneClient(store=store)
-    out = client.register_run(intent="shared", mode="enforce", run_id="join-me")
-    assert out["run_id"] == "join-me"
+    trace = "a" * 32
+    out = client.register_run(intent="shared", mode="enforce", trace_id=trace)
+    assert out["trace_id"] == trace
 
     with tokenops_run(
         client=client,
-        headers={RUN_ID_HEADER: "join-me"},
+        headers={"traceparent": f"00-{trace}-{'b' * 16}-01"},
         payload={"task": "hop"},
         service="researcher",
     ) as bound:
-        assert bound.registration.run_id == "join-me"
+        assert bound.registration.trace_id == trace
         assert bound.registration.intent == "shared"
         assert bound.span.service == "researcher"
         assert current_governance() is not None
-        assert client.resolve_run("join-me").intent == "shared"
+        assert client.resolve_run(trace).intent == "shared"
     clear()
 
 
@@ -189,7 +186,7 @@ def test_instrument_app_binds_context_and_hook(live_plane_url):
     async def tasks():
         with tokenops_run() as bound:
             return {
-                "run_id": bound.registration.run_id,
+                "trace_id": bound.registration.trace_id,
                 "intent": bound.registration.intent,
                 "service": bound.span.service,
             }
@@ -200,5 +197,4 @@ def test_instrument_app_binds_context_and_hook(live_plane_url):
     body = res.json()
     assert body["intent"] == "mw_intent"
     assert body["service"] == "planner"
-    assert body["run_id"]
-    assert getattr(chronicle_session.reset_session, "_tokenops_crossing_hook", False)
+    assert body["trace_id"]

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import chronicle.session as chronicle_session
-from chronicle import get_session
-
 from conftest import toy_price
 from tokenops.control import (
     ApplyControls,
@@ -29,13 +26,13 @@ def _scripted(content: str = "hello", inp: int = 10, out: int = 5):
     return dispatch, calls
 
 
-def test_wrap_complete_observes_via_crossing_hook_once():
+def test_wrap_complete_observes_via_crossing_hook_once(chronicle_envelopes):
     """Governed dispatch records one Chronicle envelope and one ledger LLM step."""
     install_crossing_hook()
     ledger = Ledger(price=toy_price)
     controls = ApplyControls()
     gov = Governor(ledger, controls)
-    reg = RunRegistration(run_id="r-w4", intent="t", user_dims={"user_id": "alice"})
+    reg = RunRegistration(trace_id="r-w4", intent="t", user_dims={"user_id": "alice"})
     attr = _build_attribution(reg, service="research")
     ledger.open_run("r-w4")
 
@@ -50,29 +47,27 @@ def test_wrap_complete_observes_via_crossing_hook_once():
         service="research",
     )
 
-    chronicle_session.reset_session().begin_trace("r-w4")
-    session = get_session()
     with run_scope(reg, SpanContext(span_id="s1", service="research")):
         with _governance_scope(gov, attr, provider="openai", model="gpt-4o-mini"):
             resp = governed("openai", "gpt-4o-mini", [{"role": "user", "content": "hi"}])
 
     assert resp.content == "hello"
     assert len(calls) == 1
-    assert len(session.envelopes) == 1
-    assert session.envelopes[0].kind == "llm"
-    assert session.envelopes[0].name == "research.chat"
+    assert len(chronicle_envelopes) == 1
+    assert chronicle_envelopes[0].kind == "llm"
+    assert chronicle_envelopes[0].name == "research.chat"
     llm_steps = [s for s in ledger.window("r-w4") if s.node_type == "llm"]
     assert len(llm_steps) == 1  # no double-billing
     assert llm_steps[0].boundary_id == "research.chat"
 
 
-def test_wrap_complete_no_ledger_without_governance_scope():
+def test_wrap_complete_no_ledger_without_governance_scope(chronicle_envelopes):
     """Chronicle still traces; TokenOps ledger stays quiet without bound governance."""
     install_crossing_hook()
     ledger = Ledger(price=toy_price)
     controls = ApplyControls()
     gov = Governor(ledger, controls)
-    reg = RunRegistration(run_id="r-bare", intent="t", user_dims={"user_id": "alice"})
+    reg = RunRegistration(trace_id="r-bare", intent="t", user_dims={"user_id": "alice"})
     attr = _build_attribution(reg, service="research")
     ledger.open_run("r-bare")
 
@@ -87,10 +82,8 @@ def test_wrap_complete_no_ledger_without_governance_scope():
         service="research",
     )
 
-    chronicle_session.reset_session().begin_trace("r-bare")
-    session = get_session()
     # No run_scope / governance binding — crossing hook no-ops for TokenOps ingest
     governed("openai", "gpt-4o-mini", [{"role": "user", "content": "hi"}])
 
-    assert len(session.envelopes) == 1
+    assert len(chronicle_envelopes) == 1
     assert ledger.step_count("r-bare") == 0

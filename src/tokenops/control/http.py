@@ -11,7 +11,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 import httpx
-from chronicle.session import reset_session
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
@@ -34,13 +33,13 @@ def _coerce_user_dims(raw: object) -> dict[str, str]:
 
 
 def mount_run_registration(app: FastAPI, store: Store) -> None:
-    """Mount ``POST /v1/runs`` and begin a Chronicle trace for the registered run."""
+    """Mount ``POST /v1/runs`` (run registration)."""
 
     @app.post("/v1/runs")
     async def register_run(request: Request) -> JSONResponse:
         """Entry registration — required before ``POST /v1/tasks`` (#2 split endpoint)."""
         payload = await request.json()
-        run_id = str(payload.get("run_id") or "").strip() or new_id("run")
+        trace_id = str(payload.get("run_id") or "").strip() or new_id("run")
         intent = str(payload.get("intent", ""))
         user_dims = _coerce_user_dims(payload.get("user_dims"))
         try:
@@ -50,7 +49,7 @@ def mount_run_registration(app: FastAPI, store: Store) -> None:
         try:
             reg = store.register_run(
                 RunRegistration(
-                    run_id=run_id,
+                    trace_id=trace_id,
                     intent=intent,
                     user_dims=user_dims,
                     mode=mode,
@@ -58,9 +57,8 @@ def mount_run_registration(app: FastAPI, store: Store) -> None:
             )
         except RunAlreadyRegisteredError as exc:
             return JSONResponse({"error": str(exc)}, status_code=409)
-        reset_session().begin_trace(reg.run_id)
         return JSONResponse(
-            {"run_id": reg.run_id, "status": "registered", "mode": reg.mode.value},
+            {"run_id": reg.trace_id, "status": "registered", "mode": reg.mode.value},
             status_code=201,
         )
 
@@ -108,6 +106,14 @@ def _raise_for_response(response: httpx.Response) -> None:
         ) from exc
 
 
+def _from_wire(body: dict[str, Any]) -> dict[str, Any]:
+    """Control-plane 0.2 names the trace key ``trace_id`` on the wire (removed with the 1.0 client)."""
+    if "run_id" in body:
+        body = {**body, "trace_id": body["run_id"]}
+        del body["run_id"]
+    return body
+
+
 def _plane_auth_headers() -> dict[str, str]:
     key = (
         os.environ.get("CONTROL_PLANE_API_KEY") or os.environ.get("TOKENOPS_API_KEY") or ""
@@ -128,7 +134,7 @@ async def post_run(
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(f"{base}/v1/runs", json=payload, headers=_plane_auth_headers())
         _raise_for_response(response)
-        return response.json()
+        return _from_wire(response.json())
 
 
 def post_run_sync(
@@ -142,4 +148,4 @@ def post_run_sync(
     with httpx.Client(timeout=timeout) as client:
         response = client.post(f"{base}/v1/runs", json=payload, headers=_plane_auth_headers())
         _raise_for_response(response)
-        return response.json()
+        return _from_wire(response.json())

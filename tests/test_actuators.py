@@ -6,7 +6,6 @@ policies (output_runaway / progress_guard / context_compaction) fire determinist
 
 from __future__ import annotations
 
-import chronicle.session as chronicle_session
 import pytest
 
 from conftest import toy_price
@@ -26,9 +25,9 @@ from tokenops.control.policies import (
 from tokenops.providers.types import ModelResponse
 
 
-def _attr(run_id):
+def _attr(trace_id):
     return _build_attribution(
-        RunRegistration(run_id=run_id, intent="t", user_dims={"user_id": "alice"}),
+        RunRegistration(trace_id=trace_id, intent="t", user_dims={"user_id": "alice"}),
         service="research",
     )
 
@@ -70,13 +69,12 @@ def test_retry_recovers_from_degenerate_output():
     gov = Governor(ledger, controls)
     gov.register(*output_runaway.build(repeats=4, max_retries=2))
 
-    reg = RunRegistration(run_id="r1", intent="t", user_dims={"user_id": "alice"})
+    reg = RunRegistration(trace_id="r1", intent="t", user_dims={"user_id": "alice"})
     attr = _build_attribution(reg, service="research")
     ledger.open_run("r1")
     scripted = ScriptedModel(fail_n=2)
     governed = _bound_run(gov, attr, scripted)
 
-    chronicle_session.reset_session().begin_trace("r1")
     with run_scope(reg, SpanContext(span_id="s", service="research")):
         with _governance_scope(gov, attr, provider="openai", model="gpt-4o-mini"):
             resp = governed("openai", "gpt-4o-mini", [{"role": "user", "content": "hi"}])
@@ -132,7 +130,7 @@ def test_cancel_tears_down_degenerate_stream_then_retries():
     gov = Governor(ledger, controls)
     gov.register(*output_runaway.build(repeats=4, max_retries=2))
 
-    reg = RunRegistration(run_id="r2", intent="t", user_dims={"user_id": "alice"})
+    reg = RunRegistration(trace_id="r2", intent="t", user_dims={"user_id": "alice"})
     attr = _build_attribution(reg, service="research")
     ledger.open_run("r2")
     stream = ScriptedStream(fail_n=2)
@@ -151,7 +149,6 @@ def test_cancel_tears_down_degenerate_stream_then_retries():
         on_cancel=lambda: cancels.append(1),
     )
 
-    chronicle_session.reset_session().begin_trace("r2")
     with run_scope(reg, SpanContext(span_id="s", service="research")):
         with _governance_scope(gov, attr, provider="openai", model="gpt-4o-mini"):
             resp = governed("openai", "gpt-4o-mini", [{"role": "user", "content": "hi"}])
