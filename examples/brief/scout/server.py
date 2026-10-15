@@ -10,6 +10,7 @@ from collections.abc import Mapping
 
 from examples.a2a.messages import bench_corpus_profile
 from examples.a2a.server import create_a2a_app, run_server
+from examples.a2a.tracing import configure_tracing
 from examples.agents.types import StepEvent, TokenUsage
 from examples.app_config import load_config
 from examples.brief.client import delegate_analyst, delegate_editor
@@ -34,12 +35,13 @@ INTENT = "brief_scout"
 
 def build_app():
     cfg = load_config().scout
+    configure_tracing(AGENT, [cfg.analyst_url, cfg.editor_url])
     agent = ScoutAgent(cfg)
     client = ControlPlaneClient.from_env()
 
     async def handler(payload: dict, headers: Mapping[str, str]) -> dict:
         with tokenops_run(client=client) as bound:
-            reg = bound.registration
+            reg = bound.hop
             trace_id = reg.trace_id
             attr = bound.attr
             governor = bound.governor

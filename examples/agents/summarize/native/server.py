@@ -5,6 +5,7 @@ from collections.abc import Mapping
 
 from examples.a2a.messages import parse_findings, summarize_response
 from examples.a2a.server import create_a2a_app, run_server
+from examples.a2a.tracing import configure_tracing
 from examples.agents.summarize.native.agent import NativeSummarizeAgent
 from examples.agents.types import StepEvent, TokenUsage
 from examples.app_config import load_config
@@ -22,12 +23,13 @@ AGENT = "summarize"
 
 def build_app():
     cfg = load_config().summarize
+    configure_tracing(AGENT, [])
     agent = NativeSummarizeAgent(cfg)
     client = ControlPlaneClient.from_env()
 
     async def handler(payload: dict, headers: Mapping[str, str]) -> dict:
         with tokenops_run(client=client) as bound:
-            reg = bound.registration
+            reg = bound.hop
             trace_id = reg.trace_id
             attr = bound.attr
             governor = bound.governor

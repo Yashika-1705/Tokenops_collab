@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from examples.a2a.client import delegate_summarize
 from examples.a2a.messages import bench_corpus_profile, task_response
 from examples.a2a.server import create_a2a_app, run_server
+from examples.a2a.tracing import configure_tracing
 from examples.agents.research.native.agent import NativeResearchAgent
 from examples.agents.types import RunResult, StepEvent, TokenUsage
 from examples.app_config import load_config
@@ -30,12 +31,13 @@ INTENT = "research"
 
 def build_app():
     cfg = load_config().research
+    configure_tracing(AGENT, [cfg.summarize_url])
     agent = NativeResearchAgent(cfg)
     client = ControlPlaneClient.from_env()
 
     async def handler(payload: dict, headers: Mapping[str, str]) -> dict:
         with tokenops_run(client=client) as bound:
-            reg = bound.registration
+            reg = bound.hop
             trace_id = reg.trace_id
             attr = bound.attr
             governor = bound.governor
