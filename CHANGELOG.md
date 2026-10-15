@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- End-to-end tests (`tests/e2e`) against a real control plane 1.x in process: a governed agent
+  trips its budget and the halt is on the trace attributes and in the halted-trace list; two
+  agents share one budget and the second is stopped by the first; a halted trace is replayed
+  with Chronicle, reproducing the halt with the original cap and passing with the fix.
 - `context_compaction` savings are recorded as envelope metadata
   (`tokenops.compaction_tokens_before`, `_tokens_after`, `_tokens_saved`) by `wrap_complete`
   and `wrap_stream`, because the control plane stores no per-policy statistics (control-plane
